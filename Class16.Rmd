@@ -1,0 +1,192 @@
+---
+title: "Bioinformatics Class 16"
+author: "Pallas Duong"
+date: "5/24/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#TnSeq Practice 
+
+Load the libraries 
+```{r}
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(readr)
+```
+
+Load the file with experimental results from TnSeq experiment 
+```{r}
+exp_data <- read.csv("Experimental_results.csv")
+head(exp_data)
+```
+
+Remove the column "X"
+```{r}
+exp_data <- select(exp_data, -X)
+head(exp_data)
+```
+
+```{r}
+#"Select" function practice 
+Mut_str_env <- select(exp_data, Mut_ID, Strain, Environment)
+head(Mut_str_env)
+```
+
+Rearrange table to be able to plot the data. Create a column "Time" with time points and column "Frequency" with corresponding barcode frequenceies.
+```{r}
+exp_rearranged <- gather(exp_data, Time, Frequency, H_0:H_96)
+head(exp_rearranged)
+```
+
+Remove the "H_" part from the Time column using "separate" function
+```{r}
+table_for_graph <- separate(exp_rearranged, Time, into = c("H", "Time"))
+table_for_graph <- select(table_for_graph, -H)
+head(table_for_graph)
+```
+
+Remove "NA" values 
+```{r}
+table_cleaned<-na.omit(table_for_graph)
+table_cleaned$Time<-as.numeric(table_cleaned$Time)
+head(table_cleaned)
+```
+
+Plot data for each strain separately 
+```{r}
+DivAnc<-filter(table_cleaned, table_cleaned$Strain=="DivAnc")
+L013<-filter(table_cleaned, table_cleaned$Strain=="L013")
+```
+
+Make a plot of DivAnc strains
+```{r}
+DivAnc_plot=ggplot(DivAnc)+geom_line(aes(x=Time,y=Frequency,group=BC_ID),alpha=.2,colour="#000033")+ggtitle("DivAnc_SC3")+theme(plot.title = element_text(hjust = 0.5))+xlab("Time, hours") + ylab("Log10(Barcode frequency)")
+DivAnc_plot
+```
+
+Make a plot for L013 strain
+```{r}
+L013_plot=ggplot(L013)+geom_line(aes(x=Time,y=Frequency,group=BC_ID),alpha=.2,colour="#CC6633")+ggtitle("L013_SC3")+theme(plot.title = element_text(hjust = 0.5))+xlab("Time, hours") + ylab("Log10(Barcode frequency)")
+L013_plot
+```
+
+Make 2 plots at the same time
+```{r}
+ggplot(table_cleaned)+geom_line(aes(x=Time,y=Frequency,group=BC_ID),alpha=.2,colour="#000033")+facet_grid(.~Strain)+ggtitle("Barcode trajectories")+theme(plot.title = element_text(hjust = 0.5))+xlab("Time, hours") + ylab("Log10(Barcode frequency)")
+```
+
+Pick one mutation and check how it behaves in different strains 
+```{r}
+mut48<-filter(table_cleaned, table_cleaned$Mut_ID=="48")
+mut48
+```
+
+Plot
+```{r}
+ggplot(mut48,aes(Time, Frequency, group=BC_ID, color=BC_ID))+geom_line()+theme(legend.position="none")+facet_grid(.~Strain)+ggtitle("Mutation_48")+xlab("Time, hours") + ylab("Log10(Barcode frequency)")+theme(plot.title = element_text(hjust = 0.5))
+```
+
+Filter out barcodes with frequency >(-5) and use them for subsequent ananlysis
+```{r}
+mut48_f<-filter(mut48, mut48$Frequency>(-5))
+mut48_f
+```
+
+Plot 
+```{r}
+ggplot(mut48_f,aes(Time, Frequency, group=BC_ID, color=BC_ID))+geom_line()+theme(legend.position="none")+facet_grid(.~Strain)+ggtitle("Mutation_48")+xlab("Time, hours") + ylab("Log10(Barcode frequency)")+theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+ggplot(mut48_f,aes(Time, Frequency, colour = BC_ID, group=BC_ID))+geom_point()+geom_smooth(se = FALSE, method = "lm")+facet_grid(.~Strain)+theme(legend.position="none")+ggtitle(paste("Mutation",48, sep="_"))+xlab("Time, hours")+ ylab("Log10(Barcode frequency)")
+```
+
+Estimate the slope of each barbode. For this exercise, take the filtered data for mutation 48 (mut48_f) and filter out information about one barcode you like. BC_ID = 722 in DivAnc strain
+```{r}
+BC_722<-filter(mut48_f, mut48_f$BC_ID=="722", mut48_f$Strain=="DivAnc")
+BC_722
+```
+
+Plot frequency of this barcode
+```{r}
+ggplot(BC_722,aes(Time, Frequency, colour = BC_ID))+geom_point()+theme(legend.position="none")+ggtitle("BC_722")+xlab("Time, hours") + ylab("Log10(Frequency)")
+```
+
+Use "lm" fucntion to fit the line to these points
+```{r}
+ggplot(BC_722,aes(Time, Frequency, colour = BC_ID))+geom_point()+geom_smooth(se = FALSE, method = "lm")+theme(legend.position="none")+ggtitle("BC_722")+xlab("Time, hours") + ylab("Log10(Frequency)")
+```
+
+Check what data does 'lm' function return
+```{r}
+regression_model<-lm(Frequency~Time,BC_722)
+summary_data<-summary(regression_model)
+summary_data
+```
+
+Access the value of Slope and Intercept in this line 
+```{r}
+#Slope
+Time<-summary_data$coefficients[2]
+Time
+#Intercept
+Intercept<-summary_data$coefficients[1]
+Intercept
+```
+
+Find slopes for each barcode for each mutation in all strains 
+```{r}
+data_header=matrix(data = NA,nrow = 1,ncol = 7)
+        data_header[1]="Mut_ID"
+        data_header[2]="BC_ID"
+        data_header[3]="Strain"
+        data_header[4]="Slope"
+        data_header[5]="Intercept"
+        data_header[6]="R^2"
+write.table(data_header,"Tnseq_practice_output.csv",append = FALSE, sep = ",",eol="\n",dec=".",row.names = FALSE,col.names = FALSE)
+for (mut in unique(table_cleaned$Mut_ID)) {
+    mut_data=filter(table_cleaned,table_cleaned$Mut_ID==paste(mut))
+    #now we have all data for each mutation separately
+    for (bc in unique (mut_data$BC_ID)) {
+      #now we filtered data for each barcode within 1 mutation
+      bc_mut_data=filter(mut_data,mut_data$BC_ID==paste(bc))
+      for (strain in unique (bc_mut_data$Strain)) {
+        str_bc_mut_data=filter(bc_mut_data,bc_mut_data$Strain==paste(strain))
+        #only considering combinations with 3 or more data points - anything less is statistically insignificant
+        if (nrow(str_bc_mut_data)>2){
+          regression_model=lm(Frequency~Time,str_bc_mut_data)
+          summary_data=summary(regression_model)
+          #now write to the output file! Prepare the data array first
+          data_output=matrix(data = NA,nrow = 1,ncol = 6)
+          data_output[1]=mut
+          data_output[2]=bc
+          data_output[3]=strain
+          #slope
+          data_output[4]=summary_data$coefficients[2]
+          #intercept
+          data_output[5]=summary_data$coefficients[1]
+          #r-squared
+          data_output[6]=summary_data$r.squared
+          #time to write
+          write.table(data_output,"Tnseq_practice_output.csv",append = TRUE, sep = ",",eol="\n",dec=".",row.names = FALSE,col.names = FALSE)
+      }
+    }
+  }
+ }
+```
+
+
+
+
+
+
+
+
+
+
+
